@@ -31,6 +31,8 @@ if (!current_user %in% names(project_directories)) {
 
 path_project <- project_directories[[current_user]]
 path_output <- file.path(path_project, "output")
+path_data <- file.path(path_project, "data")
+
 
 # Criteria:
   # Low income communities:
@@ -118,7 +120,7 @@ census_msa = get_acs(
 ) %>%
   
   # filter out micro areas
-  filter(str_detect(NAME, "Metro Area")) %>%
+  filter(stringr::str_detect(NAME, "Metro Area")) %>%
   select(-c(moe)) %>%
   rename(`msa` = NAME) %>%
   pivot_wider(names_from = variable, values_from = estimate)
@@ -170,6 +172,20 @@ tracts_msa_xwalk = tracts_with_msa %>%
       cat("Tracts NOT in MSAs:", tracts_not_in_msa, "\n")
       cat("Share of tracts in MSAs:", round(100*tracts_in_msa/total_tracts,2), "\n")
       
+      
+# update tracts_msa_xwalk with the current CT tract codes
+ct_tract_xwalk = read.csv(file.path(path_data, "2022tractcrosswalk.csv")) %>%
+  select(tract_fips_2020, tract_fips_2022 = Tract_fips_2022) %>%
+  mutate(tract_fips_2020 = stringr::str_pad(tract_fips_2020, side = "left", pad = "0", width = 11),
+         tract_fips_2022 = stringr::str_pad(tract_fips_2022, side = "left", pad = "0", width = 11))
+
+
+tracts_msa_xwalk = tracts_msa_xwalk %>%
+  left_join(ct_tract_xwalk, by = c("GEOID_tract" = "tract_fips_2020")) %>%
+  mutate(GEOID_tract = ifelse(!is.na(tract_fips_2022), tract_fips_2022, GEOID_tract))
+      
+tracts_msa_xwalk = tracts_msa_xwalk %>% select(-c(tract_fips_2022))
+
 
 #########################
 # Generate Eligible OZs # 
@@ -211,6 +227,11 @@ eligible_ozs = census_tracts %>%
          oz_eligible = case_when(
            oz_eligible_mfi == 1 | oz_eligible_pov == 1 ~ "OZ eligible",
            oz_eligible_pov == 0 & oz_eligible_mfi == 0 ~ "OZ ineligible",
+           
+           oz_eligible_pov == 0 & is.na(oz_eligible_mfi) ~ "OZ ineligible",
+           is.na(oz_eligible_pov) & oz_eligible_mfi == 0 ~ "OZ ineligible",
+           
+           
            TRUE ~ "insufficient information" # this includes tracts that have missing poverty or mfi data
          )) %>%
         
@@ -224,11 +245,15 @@ table(eligible_ozs$oz_eligible)
 # add in rural classification
 
 rural_classification = read.csv(file.path(path_output,"tracts_rural_classification.csv")) %>% 
-  mutate(GEOID_tract = str_pad(GEOID, side = "left", pad = "0", width = 11)) %>%
-  select(-c(X, GEOID))
+  mutate(GEOID_tract = stringr::str_pad(GEOID, side = "left", pad = "0", width = 11)) %>%
+  select(-c(X, GEOID)) %>%
+  left_join(ct_tract_xwalk, by = c("GEOID_tract" = "tract_fips_2020")) %>%
+  mutate(GEOID_tract = ifelse(!is.na(tract_fips_2022), tract_fips_2022, GEOID_tract)) %>% select(-tract_fips_2022)
+  
 
 eligible_ozs = eligible_ozs %>%
-  left_join(rural_classification, by = "GEOID_tract")
+  left_join(rural_classification, by = "GEOID_tract") %>%
+  mutate(r_stat = ifelse(is.na(r_stat), "Neither", r_stat))
 
 
 # save master oz eligibility file
@@ -237,8 +262,9 @@ writexl::write_xlsx(eligible_ozs, "tracts_by_OZ_eligibility.xlsx")
 
 # add in shape information
 ozs_sf = tracts %>%
-  left_join(eligible_ozs, by = c("GEOID" = "GEOID_tract")) %>%
-  select(-c(tract, GEOID_msa, msa, GEOID_st, state))
+  left_join(ct_tract_xwalk, by = c("GEOID" = "tract_fips_2020")) %>%
+  mutate(GEOID = ifelse(!is.na(tract_fips_2022), tract_fips_2022, GEOID)) %>% select(-tract_fips_2022) %>%
+  left_join(eligible_ozs, by = c("GEOID" = "GEOID_tract"))
 
 ozs_sf <- st_make_valid(ozs_sf)  # ensure validity
 ozs_sf <- st_transform(ozs_sf, 4326)
