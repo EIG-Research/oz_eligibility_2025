@@ -241,6 +241,8 @@ ozs_sf = tracts %>%
   select(-c(tract, GEOID_msa, msa, GEOID_st, state))
 
 ozs_sf <- st_make_valid(ozs_sf)  # ensure validity
+ozs_sf <- st_transform(ozs_sf, 4326)
+
 
 setwd(path_output)
 dir.create("ozs_shapefiles")
