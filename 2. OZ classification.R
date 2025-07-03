@@ -54,8 +54,8 @@ path_data <- file.path(path_project, "data")
 # variable list:
 tract_vars = c(
   # poverty
-  "poverty_univ" = "B17001B_001", # population universe
-  "pop_poverty" = "B17001B_002", # population under poverty line
+  "poverty_univ" = "B17001_001", # population universe
+  "pop_poverty" = "B17001_002", # population under poverty line
   
   # mfi
   "mfi" = "B19113_001", # median family income
@@ -102,13 +102,13 @@ census_tracts = bind_rows(tracts_list) %>%
   select(-moe) %>% rename(tract = NAME) %>%
   pivot_wider(names_from = variable, values_from = estimate) %>%
   mutate(poverty_rte = 100*pop_poverty/poverty_univ,
-         unempl_rte = 100*unemployed/labor_force) %>%
+         unempl_rte = 100*unemployed/labor_force,
+         GEOID_county = substr(GEOID, 1, 5),
+         GEOID_st = substr(GEOID, 1,2)) %>%
   select(-c(pop_poverty, poverty_univ, unemployed, labor_force))
-
 
 # clean up
 rm(tracts_list, tract_pull, st)
-
 
 # pull in MSA data
 census_msa = get_acs(
@@ -139,53 +139,18 @@ census_st = get_acs(
 
 
 ######################################
-# generate tract - to - msa crossalk #
+# tract - to - msa crosswalk #
 ######################################
 
-options(tigris_use_cache = TRUE)
+# pull in official MSA to county crosswalk
+# https://www.nber.org/research/data/census-core-based-statistical-area-cbsa-federal-information-processing-series-fips-county-crosswalk
 
-# Download CBSA (MSA + Micropolitan areas)
-cbsa <- core_based_statistical_areas(cb = TRUE, year = 2020)
-
-# Filter for just Metropolitan Statistical Areas (MSA)
-msa <- cbsa %>%
-  filter(LSAD == "M1")
-
-tracts = tracts(cb = TRUE, year = 2020)
-
-tracts_with_msa = st_join(tracts, msa, join = st_within) # fully within a MSA
-
-tracts_msa_xwalk = tracts_with_msa %>%
-  st_drop_geometry() %>%
-  select(GEOID_tract = GEOID.x,
-         GEOID_msa = GEOID.y
-         ) %>% na.omit()
-
-# Check results -- should have about 83% of tracts in MSAs
-      total_tracts <- nrow(tracts)
-      tracts_in_msa <- sum(!is.na(tracts_with_msa$GEOID.y))
-      tracts_not_in_msa <- total_tracts - tracts_in_msa
-      
-      # Output
-      cat("Total tracts:", total_tracts, "\n")
-      cat("Tracts in MSAs:", tracts_in_msa, "\n")
-      cat("Tracts NOT in MSAs:", tracts_not_in_msa, "\n")
-      cat("Share of tracts in MSAs:", round(100*tracts_in_msa/total_tracts,2), "\n")
-      
-      
-# update tracts_msa_xwalk with the current CT tract codes
-ct_tract_xwalk = read.csv(file.path(path_data, "2022tractcrosswalk.csv")) %>%
-  select(tract_fips_2020, tract_fips_2022 = Tract_fips_2022) %>%
-  mutate(tract_fips_2020 = stringr::str_pad(tract_fips_2020, side = "left", pad = "0", width = 11),
-         tract_fips_2022 = stringr::str_pad(tract_fips_2022, side = "left", pad = "0", width = 11))
-
-
-tracts_msa_xwalk = tracts_msa_xwalk %>%
-  left_join(ct_tract_xwalk, by = c("GEOID_tract" = "tract_fips_2020")) %>%
-  mutate(GEOID_tract = ifelse(!is.na(tract_fips_2022), tract_fips_2022, GEOID_tract))
-      
-tracts_msa_xwalk = tracts_msa_xwalk %>% select(-c(tract_fips_2022))
-
+county_msa_xwalk = read.csv(file.path(path_data, "cbsa2fipsxw.csv")) %>%
+  filter(metropolitanmicropolitanstatis == "Metropolitan Statistical Area") %>%
+  mutate(GEOID_county = paste0(stringr::str_pad(fipsstatecode, pad = "0", side="left",width=2),
+                              stringr::str_pad(fipscountycode, pad = "0", side="left",width=3)),
+         cbsacode = as.character(cbsacode)) %>%
+  select(GEOID_msa = cbsacode, GEOID_county)
 
 #########################
 # Generate Eligible OZs # 
@@ -194,13 +159,14 @@ tracts_msa_xwalk = tracts_msa_xwalk %>% select(-c(tract_fips_2022))
 eligible_ozs = census_tracts %>%
   
   # add in crosswalks
-  left_join(tracts_msa_xwalk, by = c("GEOID" = "GEOID_tract")) %>%
-  mutate(GEOID_st = substr(GEOID, 1, 2)) %>%
-  
+  left_join(county_msa_xwalk, by = "GEOID_county") %>%
+
   # add in state MFI and MSA MFI (if available)
   left_join(census_msa, by = c("GEOID_msa" = "GEOID")) %>%
-  left_join(census_st, by = c("GEOID_st" = "GEOID")) %>%
-  
+  left_join(census_st, by = c("GEOID_st" = "GEOID"))
+
+
+eligible_ozs = eligible_ozs %>%
   # extract the correct geography to match MFI to
   mutate(mfi_relate = case_when(
     !is.na(msa_mfi) ~ msa_mfi,
@@ -244,6 +210,11 @@ table(eligible_ozs$oz_eligible)
     
 # add in rural classification
 
+ct_tract_xwalk = read.csv(file.path(path_data, "2022tractcrosswalk.csv")) %>%
+  select(tract_fips_2020, tract_fips_2022 = Tract_fips_2022) %>%
+  mutate(tract_fips_2020 = stringr::str_pad(tract_fips_2020, side = "left", pad = "0", width = 11),
+         tract_fips_2022 = stringr::str_pad(tract_fips_2022, side = "left", pad = "0", width = 11))
+
 rural_classification = read.csv(file.path(path_output,"tracts_rural_classification.csv")) %>% 
   mutate(GEOID_tract = stringr::str_pad(GEOID, side = "left", pad = "0", width = 11)) %>%
   select(-c(X, GEOID)) %>%
@@ -253,7 +224,8 @@ rural_classification = read.csv(file.path(path_output,"tracts_rural_classificati
 
 eligible_ozs = eligible_ozs %>%
   left_join(rural_classification, by = "GEOID_tract") %>%
-  mutate(r_stat = ifelse(is.na(r_stat), "Neither", r_stat))
+  mutate(r_stat = ifelse(is.na(r_stat), "Neither", r_stat)) %>%
+  mutate(r_stat_simp = ifelse(r_stat == "Rural", "Rural", "Non-Rural"))
 
 
 # save master oz eligibility file
@@ -261,6 +233,8 @@ setwd(path_output)
 writexl::write_xlsx(eligible_ozs, "tracts_by_OZ_eligibility.xlsx")
 
 # add in shape information
+tracts = tracts(cb = TRUE, year = 2020)
+
 ozs_sf = tracts %>%
   left_join(ct_tract_xwalk, by = c("GEOID" = "tract_fips_2020")) %>%
   mutate(GEOID = ifelse(!is.na(tract_fips_2022), tract_fips_2022, GEOID)) %>% select(-tract_fips_2022) %>%
@@ -271,8 +245,8 @@ ozs_sf <- st_transform(ozs_sf, 4326)
 
 
 setwd(path_output)
-dir.create("ozs_shapefiles")
-setwd(file.path(path_output, "ozs_shapefiles"))
+dir.create("ozs_shape")
+setwd(file.path(path_output, "ozs_shape"))
 st_write(ozs_sf, "ozs_shape.shp")
 
 
