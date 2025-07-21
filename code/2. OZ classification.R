@@ -331,9 +331,20 @@ ozs_sf_wrangled = ozs_sf %>%
     mfi_ratio !=0 ~ as.character(round(100*mfi_ratio,2)),
     TRUE ~ NA
   ),
-  poverty_rte = round(poverty_rte*100,2),
-  unempl_rte = round(unempl_rte*100,2),
-  msa = ifelse(is.na(msa), "not in an MSA", msa)
+  poverty_rte = case_when(
+    is.na(poverty_rte) ~ "not available",
+    !is.na(poverty_rte) ~ paste0(round(poverty_rte*100,2), "%")
+  ),
+  unempl_rte = case_when(
+    is.na(unempl_rte) ~ "not available",
+    !is.na(unempl_rte) ~ paste0(round(unempl_rte*100,2), "%")
+  ),
+  msa = ifelse(is.na(msa), "not in an MSA", msa),
+  population = case_when(
+    population == 0 ~ "not available",
+    is.na(population) ~ "not available",
+    population != 0 ~ paste0(round(population, 0))
+  )
   ) %>% select(STATEFP, COUNTYFP, TRACTCE, AFFGEOID, GEOID,
     NAME, NAMELSAD, STUSPS, NAMELSADCO, STATE_NAME, LSAD,
     ALAND, AWATER, tract, GEOID_msa, msa, GEOID_st, state,
