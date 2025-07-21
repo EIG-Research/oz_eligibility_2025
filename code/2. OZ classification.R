@@ -316,13 +316,38 @@ ozs_sf = tracts %>%
   mutate(GEOID = ifelse(!is.na(tract_fips_2022), tract_fips_2022, GEOID)) %>% select(-tract_fips_2022) %>%
   left_join(eligible_ozs, by = c("GEOID" = "GEOID_tract"))
 
-ozs_sf <- st_make_valid(ozs_sf)  # ensure validity
-ozs_sf <- st_transform(ozs_sf, 4326)
+
+# fix the dataset format changed by Jason
+ozs_sf_wrangled = ozs_sf %>%
+  mutate(mfi = case_when(
+    mfi == 0 ~ "not available",
+    is.na(mfi) ~ "not available",
+    mfi !=0 ~ paste0("$", round(mfi,0)),
+    TRUE ~ NA
+  ),
+  mfi_ratio = case_when(
+    mfi_ratio == 0 ~ "not available",
+    is.na(mfi_ratio) ~ "not available",
+    mfi_ratio !=0 ~ as.character(round(100*mfi_ratio,2)),
+    TRUE ~ NA
+  ),
+  poverty_rte = round(poverty_rte*100,2),
+  unempl_rte = round(unempl_rte*100,2),
+  msa = ifelse(is.na(msa), "not in an MSA", msa)
+  ) %>% select(STATEFP, COUNTYFP, TRACTCE, AFFGEOID, GEOID,
+    NAME, NAMELSAD, STUSPS, NAMELSADCO, STATE_NAME, LSAD,
+    ALAND, AWATER, tract, GEOID_msa, msa, GEOID_st, state,
+    population, mfi, poverty_rte, mfi_ratio, oz_eligible,
+    unempl_rte, r_stat, r_stat_simp, geometry)
+
+
+ozs_sf_write <- st_make_valid(ozs_sf_wrangled)  # ensure validity
+ozs_sf_write <- st_transform(ozs_sf_write, 4326)
 
 setwd(path_output)
 dir.create("ozs_shape")
 setwd(file.path(path_output, "ozs_shape"))
-st_write(ozs_sf, "ozs_shape.shp")
+st_write(ozs_sf_write, "ozs_shape.shp")
 
 # important factors to list -- that secetarty must report
 # page 417 - 418
