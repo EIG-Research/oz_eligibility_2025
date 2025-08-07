@@ -32,7 +32,6 @@ options(tigris_use_cache = TRUE)
 project_directories <- list(
   "name" = "PATH TO DIRECTORY",
   "sarah" = "/Users/sarah/Documents/GitHub/oz_eligibility_2025",
-  "jiaxinhe" = "/Users/jiaxinhe/Documents/projects/oz_eligibility_2025"
 )
 
 current_user <- Sys.info()[["user"]]
@@ -67,7 +66,7 @@ tracts_all = tracts_all %>%
 places_all <- map_dfr(state_fips, ~ places(state = .x, year = 2020, class = "sf"))
 
 # pull in place population
-census_api_key("0e4f06202282214292b5b134dce5ec1da9d6fa77", install = TRUE, overwrite=TRUE)
+census_api_key("ENTER-USER-KEY-HERE", install = TRUE, overwrite=TRUE)
 readRenviron("~/.Renviron")
 
 places_pop <- get_decennial(geography = "place", 
@@ -93,7 +92,7 @@ rm(places_all, places_pop)
 ########################## 
 # 3. grab urbanized areas
 
-# from CENSUS tigris files directly
+# download CENSUS tigris files directly (vintage 2024)
 # https://www.census.gov/cgi-bin/geo/shapefiles/index.php  
 
 urban_areas <- st_read(file.path(path_data, "tl_2024_us_uac20/tl_2024_us_uac20.shp"))
