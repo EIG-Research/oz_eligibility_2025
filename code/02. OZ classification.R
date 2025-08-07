@@ -22,7 +22,6 @@ library(tigris) # for tract and msa shapefiles
 project_directories <- list(
   "name" = "PATH TO DIRECTORY",
   "sarah" = "/Users/sarah/Documents/GitHub/oz_eligibility_2025",
-  "jiaxinhe" = "/Users/jiaxinhe/Documents/projects/oz_eligibility_2025"
 )
 
 current_user <- Sys.info()[["user"]]
@@ -126,7 +125,7 @@ msa_vars = c(
   "msa_mfi" = "B19113_001"
 )  
 
-census_api_key("f0a4d766bde27f14627892a18bdc610ab945336d", install = TRUE, overwrite=TRUE)
+census_api_key("ENTER-USER-KEY-HERE", install = TRUE, overwrite=TRUE)
 readRenviron("~/.Renviron")
 
 # pull in tract data
@@ -317,7 +316,7 @@ ozs_sf = tracts %>%
   left_join(eligible_ozs, by = c("GEOID" = "GEOID_tract"))
 
 
-# fix the dataset format changed by Jason
+# adjust data formatting
 ozs_sf_wrangled = ozs_sf %>%
   mutate(mfi = case_when(
     mfi == 0 ~ "not available",
@@ -355,22 +354,8 @@ ozs_sf_wrangled = ozs_sf %>%
 ozs_sf_write <- st_make_valid(ozs_sf_wrangled)  # ensure validity
 ozs_sf_write <- st_transform(ozs_sf_write, 4326)
 
+# save output
 setwd(path_output)
 dir.create("ozs_shape")
 setwd(file.path(path_output, "ozs_shape"))
 st_write(ozs_sf_write, "ozs_shape.shp")
-
-# important factors to list -- that secetarty must report
-# page 417 - 418
-# unemployment rate
-# persons working in the population census tract
-# individual, family, household poverty rates
-# median family income
-# demographic info: age, income, education, race, employment
-# average % of income of population census tract spent on rent annually
-# # of residences in population census tract
-# home ownership rate
-# average value of residentail property
-# number of affordable housing units
-# number of new busines starts in ceneus tract
-# dist of employees by NAICS code
