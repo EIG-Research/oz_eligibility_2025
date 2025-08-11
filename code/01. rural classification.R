@@ -108,8 +108,7 @@ urban_areas <- st_read(file.path(path_data, "tl_2024_us_uac20/tl_2024_us_uac20.s
 st_crs(urban_areas) == st_crs(places_above_50k)
 
 # find UAs that intersect cities >50k
-# ""**T***T**"": restricts geometries to have overlapping interiors (true area intersection)
-# excludes tracts that only share a border
+# includes tracts that only share a border
 
 uas_near_cities <- st_filter(urban_areas, places_above_50k,
                              .predicate = st_intersects)
