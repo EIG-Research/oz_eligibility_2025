@@ -20,9 +20,7 @@ library(tigris) # for tract and msa shapefiles
 
 # set user-specific project paths
 project_directories <- list(
-  "name" = "PATH TO DIRECTORY",
-  "sarah" = "/Users/sarah/Documents/GitHub/oz_eligibility_2025",
-  "jiaxinhe" = "/Users/jiaxinhe/Documents/projects/oz_eligibility_2025"
+  "name" = "PATH TO DIRECTORY"
 )
 
 current_user <- Sys.info()[["user"]]
@@ -125,9 +123,6 @@ state_vars = c(
 msa_vars = c(
   "msa_mfi" = "B19113_001"
 )  
-
-census_api_key("f0a4d766bde27f14627892a18bdc610ab945336d", install = TRUE, overwrite=TRUE)
-readRenviron("~/.Renviron")
 
 # pull in tract data
 tracts_list = list()
@@ -326,10 +321,10 @@ oz_24_eligibility_public <- eligible_ozs %>%
                                 mfi_relate != 0 ~ paste0("$", round(mfi_relate, 0)),
                                 TRUE ~ NA),
          mfi_ratio = case_when(mfi_ratio == 0 | is.na(mfi_ratio) ~ "not available",
-                               mfi_ratio != 0 ~ as.character(round(mfi_ratio, 2)),
+                               mfi_ratio != 0 ~ as.character(round(mfi_ratio, 4)),
                                TRUE ~ NA),
          poverty_rte = case_when(is.na(poverty_rte) ~ "not available",
-                                 !is.na(poverty_rte) ~ paste0(round(poverty_rte*100,2), "%"))) %>%
+                                 !is.na(poverty_rte) ~ paste0(round(poverty_rte * 100, 2), "%"))) %>%
   select(GEOID_tract, tract,
          GEOID_msa, msa,
          GEOID_st, state,
@@ -494,6 +489,11 @@ setwd(path_output)
 dir.create("ozs_shape_24")
 setwd(file.path(path_output, "ozs_shape_24"))
 st_write(ozs_sf_write, "ozs_shape_24.shp")
+
+setwd(path_output)
+dir.create("oz_shape_2024_kml")
+setwd(file.path(path_output, "ozs_shape_24"))
+st_write(ozs_sf_write, file.path("oz_shape_2024_kml","ozs_shape_24.kml"), driver = "KML")
 
 # important factors to list -- that Treasury must report
 # page 417 - 418
