@@ -1,0 +1,5 @@
+"statistic","tract_count","share_tract_count","pop_count","pop_share"
+"Tracts >50% MOE in MFI",7161,0.0838701365627416,23163152,0.0685139754622429
+"OZ Eligible Tracts >50% MOE in MFI",4739,0.187616295181915,15232701,0.16901250599483
+"Ineligible Tracts Eligible with Low 90% CI",17394,0.29441933682019,66973895,0.270552457074544
+"Eligible Tracts Ineligible with High 90% CI",7303,0.289124668435013,27127044,0.300984683325172

@@ -4,8 +4,8 @@
     # Bill text can be found here: https://www.congress.gov/bill/119th-congress/house-bill/1/text
     # see pages 390 - 420
     # definitions are on pages 392 - 393
-# Author: Sarah Eckhardt (sarah@eig.org)
-# Last updated: July 2nd, 2025
+# Author: Sarah Eckhardt (sarah@eig.org) and Jason He (jiaxin@eig.org)
+# Last updated: Jan 29th, 2026
 ################################################################################
 
 # remove dependencies
@@ -53,7 +53,7 @@ path_data <- file.path(path_project, "data")
 #########################
 
 ### Determine ACS variables ###
-acs_vars <- load_variables(2023, "acs5", cache = TRUE)
+acs_vars <- load_variables(2024, "acs5", cache = TRUE)
 
 # variable list:
 tract_vars = c(
@@ -135,15 +135,12 @@ for(st in c(state.abb, "DC", "PR")){
 tract_pull = get_acs(
   geography = "tract",
   variables = tract_vars,
-  year = 2023,
+  year = 2024,
   survey = "acs5",
   state = st,
-  geometry = FALSE
-)
-
-tracts_list[[st]] <- tract_pull
+  geometry = FALSE)
+  tracts_list[[st]] <- tract_pull
 }
-
 
 census_tracts <- bind_rows(tracts_list) %>%
   select(-moe) %>% rename(tract = NAME) %>%
@@ -182,6 +179,19 @@ census_tracts <- bind_rows(tracts_list) %>%
          edu_no_hs, edu_ba_above, pop_adult, prime_age_unemployed, prime_age_nilf, prime_age_population,
          housing_vacant, housing_vacant_seasonal, housing_total)
 
+cl90_z_score <- qnorm(0.95)
+census_tract_moe <- bind_rows(tracts_list) %>%
+  filter(variable == "mfi") %>%
+  select(GEOID, estimate, moe) %>%
+  mutate(mfi_90cl_low = estimate - moe,
+         mfi_90cl_high = estimate + moe,
+         mfi_standard_error = moe/cl90_z_score,
+         mfi_moe_over_50pct = moe/estimate > 0.5) %>%
+  select(-c(estimate, moe))
+
+census_tracts <- census_tracts %>%
+  left_join(census_tract_moe, by = "GEOID")
+
 # clean up
 rm(tracts_list, tract_pull, st)
 
@@ -189,7 +199,7 @@ rm(tracts_list, tract_pull, st)
 census_msa <- get_acs(
   geography = "cbsa",
   variables = msa_vars,
-  year = 2023,
+  year = 2024,
   survey = "acs5",
   geometry = FALSE
 ) %>%
@@ -199,19 +209,17 @@ census_msa <- get_acs(
   select(-c(moe)) %>%
   rename(`msa` = NAME) %>%
   pivot_wider(names_from = variable, values_from = estimate)
-  
 
 # pull in State data
 census_st <- get_acs(
   geography = "state",
   variables = state_vars,
-  year = 2023,
+  year = 2024,
   survey = "acs5",
   geometry = FALSE
 ) %>%
   select(-c(moe)) %>% rename(state = NAME) %>%
   pivot_wider(names_from = variable, values_from = estimate)
-
 
 ######################################
 # tract - to - msa crosswalk #
@@ -240,7 +248,6 @@ eligible_ozs <- census_tracts %>%
   left_join(census_msa, by = c("GEOID_msa" = "GEOID")) %>%
   left_join(census_st, by = c("GEOID_st" = "GEOID"))
 
-
 eligible_ozs = eligible_ozs %>%
   # extract the correct geography to match MFI to
   mutate(mfi_relate = case_when(
@@ -256,7 +263,6 @@ eligible_ozs = eligible_ozs %>%
             mfi_ratio > 0.7 ~ 0,
             TRUE ~ NA
             ),
-      
          oz_eligible_pov = case_when(
            poverty_rte < 0.2 ~ 0,
            poverty_rte >= 0.2 & is.na(mfi) ~ 1, # if no MFI available, eligible based on poverty alone
@@ -277,8 +283,11 @@ eligible_ozs = eligible_ozs %>%
          )) %>%
         
         select(GEOID_tract = GEOID, tract, GEOID_msa, msa, GEOID_st, state,
-               population, mfi, poverty_rte, mfi_ratio, oz_eligible, unempl_rte,
-               share_nonwhite, share_no_hs_adult, share_ba_above_adult, prime_age_not_working, vacancy_rate,
+               population,
+               mfi, mfi_relate,
+               mfi_90cl_low, mfi_90cl_high, mfi_standard_error, mfi_moe_over_50pct,
+               poverty_rte, mfi_ratio, oz_eligible,
+               unempl_rte, share_nonwhite, share_no_hs_adult, share_ba_above_adult, prime_age_not_working, vacancy_rate,
                pop_poverty, poverty_univ, unemployed, labor_force, race_white, race_univ,
                edu_no_hs, edu_ba_above, pop_adult, prime_age_unemployed, prime_age_nilf, prime_age_population,
                housing_vacant, housing_vacant_seasonal, housing_total)
@@ -286,19 +295,18 @@ eligible_ozs = eligible_ozs %>%
 table(eligible_ozs$oz_eligible)
 
 # add in rural classification
+# ct_tract_xwalk <- read.csv(file.path(path_data, "2022tractcrosswalk.csv")) %>%
+#   select(tract_fips_2020, tract_fips_2022 = Tract_fips_2022) %>%
+#   mutate(tract_fips_2020 = stringr::str_pad(tract_fips_2020, side = "left", pad = "0", width = 11),
+#          tract_fips_2022 = stringr::str_pad(tract_fips_2022, side = "left", pad = "0", width = 11))
 
-ct_tract_xwalk <- read.csv(file.path(path_data, "2022tractcrosswalk.csv")) %>%
-  select(tract_fips_2020, tract_fips_2022 = Tract_fips_2022) %>%
-  mutate(tract_fips_2020 = stringr::str_pad(tract_fips_2020, side = "left", pad = "0", width = 11),
-         tract_fips_2022 = stringr::str_pad(tract_fips_2022, side = "left", pad = "0", width = 11))
-
-rural_classification <- read.csv(file.path(path_output,"tracts_rural_classification.csv")) %>% 
+rural_classification <- read.csv(file.path(path_output,"tracts_rural_classification_24.csv")) %>% 
   mutate(GEOID_tract = stringr::str_pad(GEOID, side = "left", pad = "0", width = 11)) %>%
-  select(-c(X, GEOID)) %>%
-  left_join(ct_tract_xwalk, by = c("GEOID_tract" = "tract_fips_2020")) %>%
-  mutate(GEOID_tract = ifelse(!is.na(tract_fips_2022), tract_fips_2022, GEOID_tract)) %>% select(-tract_fips_2022)
+  select(-c(X, GEOID))
+  # left_join(ct_tract_xwalk, by = c("GEOID_tract" = "tract_fips_2020")) %>%
+  # mutate(GEOID_tract = ifelse(!is.na(tract_fips_2022), tract_fips_2022, GEOID_tract)) %>%
+  # select(-tract_fips_2022)
   
-
 eligible_ozs <- eligible_ozs %>%
   left_join(rural_classification, by = "GEOID_tract") %>%
   mutate(r_stat = ifelse(is.na(r_stat), "Neither", r_stat)) %>%
@@ -306,61 +314,188 @@ eligible_ozs <- eligible_ozs %>%
 
 # save master oz eligibility file
 setwd(path_output)
-writexl::write_xlsx(eligible_ozs, "tracts_by_OZ_eligibility.xlsx")
+oz_24_eligibility_public <- eligible_ozs %>%
+  mutate(GEOID_msa = ifelse(is.na(GEOID_msa), "not in an MSA", GEOID_msa),
+         msa = ifelse(is.na(msa), "not in an MSA", msa),
+         population = case_when(population == 0 | is.na(population) ~ "not available",
+                                population != 0 ~ paste0(round(population, 0))),
+         mfi = case_when(mfi == 0 | is.na(mfi) ~ "not available",
+                         mfi != 0 ~ paste0("$", round(mfi, 0)),
+                         TRUE ~ NA),
+         mfi_relate = case_when(mfi_relate == 0 | is.na(mfi_relate) ~ "not available",
+                                mfi_relate != 0 ~ paste0("$", round(mfi_relate, 0)),
+                                TRUE ~ NA),
+         mfi_ratio = case_when(mfi_ratio == 0 | is.na(mfi_ratio) ~ "not available",
+                               mfi_ratio != 0 ~ as.character(round(mfi_ratio, 2)),
+                               TRUE ~ NA),
+         poverty_rte = case_when(is.na(poverty_rte) ~ "not available",
+                                 !is.na(poverty_rte) ~ paste0(round(poverty_rte*100,2), "%"))) %>%
+  select(GEOID_tract, tract,
+         GEOID_msa, msa,
+         GEOID_st, state,
+         population,
+         `Median Family Income` = mfi,
+         `Comparable MSA/State MFI` = mfi_relate,
+         `Tract to MSA/State MFI Ratio` = mfi_ratio,
+         `Poverty Rate` = poverty_rte,
+         `OZ Eligbility` = oz_eligible,
+         `Rural Classification` = r_stat_simp)
+
+writexl::write_xlsx(oz_24_eligibility_public,
+                    "Tracts by OZ eligibility 2020-24 ACS.xlsx")
+writexl::write_xlsx(eligible_ozs,
+                    "tracts_by_OZ_eligibility_24_master.xlsx")
+
+# Margin of error summary stats
+mfi_moe_sum_tables <- bind_rows(
+  # What % of all census tracts have MOEs > 50% of the MFI estimate (and what % of the total population lives in such tracts)
+  eligible_ozs %>%
+    summarise(tract_count = sum(mfi_moe_over_50pct, na.rm = TRUE),
+              share_tract_count = tract_count/n(),
+              pop_count = sum(as.numeric(mfi_moe_over_50pct) * population, na.rm = TRUE),
+              pop_share = pop_count/sum(population, na.rm = TRUE)) %>%
+    mutate(statistic = "Tracts >50% MOE in MFI") %>%
+    relocate(statistic),
+  
+  # What % of eligible OZ tracts have MOEs > 50% of the estimate (and what % of the total population lives in such tracts)
+  eligible_ozs %>%
+    summarise(tract_count = sum(as.numeric(mfi_moe_over_50pct) *
+                                  as.numeric(oz_eligible == "OZ eligible"),
+                                na.rm = TRUE),
+              share_tract_count = tract_count / sum(as.numeric(oz_eligible == "OZ eligible")),
+              pop_count = sum(as.numeric(mfi_moe_over_50pct) *
+                                    as.numeric(oz_eligible == "OZ eligible") *
+                                    population,
+                                  na.rm = TRUE),
+              pop_share = pop_count / sum(population * as.numeric(oz_eligible == "OZ eligible"), na.rm = TRUE)) %>%
+    mutate(statistic = "OZ Eligible Tracts >50% MOE in MFI") %>%
+    relocate(statistic),
+  
+  # How many census tracts that do not meet the eligibility criteria are nevertheless within the margin of error (and how many people live in such tracts)? Meaning, how many tracts with an MFI estimate >70% might be unfairly excluded, since the true value could be within the eligible range?
+  eligible_ozs %>%
+    mutate(mfi_ratio_90cl_low = mfi_90cl_low/mfi_relate,
+           oz_eligible_mfi_90cl_low = case_when(
+             mfi_ratio_90cl_low <= 0.7 ~ 1,
+             mfi_ratio_90cl_low > 0.7 ~ 0,
+             TRUE ~ NA),
+           oz_eligible_pov_90cl_low = case_when(
+             poverty_rte < 0.2 ~ 0,
+             poverty_rte >= 0.2 & is.na(mfi) ~ 1,
+             poverty_rte >= 0.2 & mfi_ratio_90cl_low <= 1.25 ~ 1,
+             poverty_rte >= 0.2 & mfi_ratio_90cl_low > 1.25 ~ 0,
+             TRUE ~ NA
+           ),
+           oz_eligible_90cl_low = case_when(
+             oz_eligible_mfi_90cl_low == 1 | oz_eligible_pov_90cl_low == 1 ~ "OZ eligible",
+             oz_eligible_pov_90cl_low == 0 & oz_eligible_mfi_90cl_low == 0 ~ "OZ ineligible",
+             
+             oz_eligible_pov_90cl_low == 0 & is.na(oz_eligible_mfi_90cl_low) ~ "OZ ineligible",
+             is.na(oz_eligible_pov_90cl_low) & oz_eligible_mfi_90cl_low == 0 ~ "OZ ineligible",
+
+             TRUE ~ "insufficient information" # this includes tracts that have missing poverty or mfi data
+           )) %>%
+    summarise(tract_count = sum(as.numeric(oz_eligible_90cl_low == "OZ eligible") *
+                                  as.numeric(oz_eligible == "OZ ineligible"),
+                                na.rm = TRUE),
+              share_tract_count = tract_count / sum(as.numeric(oz_eligible == "OZ ineligible")),
+              pop_count = sum(as.numeric(oz_eligible_90cl_low == "OZ eligible") *
+                                    as.numeric(oz_eligible == "OZ ineligible") *
+                                    population,
+                                  na.rm = TRUE),
+              pop_share = pop_count / sum(population * as.numeric(oz_eligible == "OZ ineligible"), na.rm = TRUE)) %>%
+    mutate(statistic = "Ineligible Tracts Eligible with Low 90% CI") %>%
+    relocate(statistic),
+  
+  # Then a similar analysis at the top end: How many tracts that qualified on poverty but were disqualified by their high MFI (exceeding 125% of the benchmark) are at risk of unfair disqualification? 
+  #   Stated differently, what share of all "disqualified" tracts are at risk of unfair disqualification, if we looked at full MOEs?
+  eligible_ozs %>%
+    mutate(mfi_ratio_90cl_high = mfi_90cl_high/mfi_relate,
+           oz_eligible_mfi_90cl_high = case_when(
+             mfi_ratio_90cl_high <= 0.7 ~ 1,
+             mfi_ratio_90cl_high > 0.7 ~ 0,
+             TRUE ~ NA),
+           oz_eligible_pov_90cl_high = case_when(
+             poverty_rte < 0.2 ~ 0,
+             poverty_rte >= 0.2 & is.na(mfi) ~ 1,
+             poverty_rte >= 0.2 & mfi_ratio_90cl_high <= 1.25 ~ 1,
+             poverty_rte >= 0.2 & mfi_ratio_90cl_high > 1.25 ~ 0,
+             TRUE ~ NA
+           ),
+           oz_eligible_90cl_high = case_when(
+             oz_eligible_mfi_90cl_high == 1 | oz_eligible_pov_90cl_high == 1 ~ "OZ eligible",
+             oz_eligible_pov_90cl_high == 0 & oz_eligible_mfi_90cl_high == 0 ~ "OZ ineligible",
+             
+             oz_eligible_pov_90cl_high == 0 & is.na(oz_eligible_mfi_90cl_high) ~ "OZ ineligible",
+             is.na(oz_eligible_pov_90cl_high) & oz_eligible_mfi_90cl_high == 0 ~ "OZ ineligible",
+             
+             TRUE ~ "insufficient information" # this includes tracts that have missing poverty or mfi data
+           )) %>%
+    summarise(tract_count = sum(as.numeric(oz_eligible_90cl_high == "OZ ineligible") *
+                                  as.numeric(oz_eligible == "OZ eligible"),
+                                na.rm = TRUE),
+              share_tract_count = tract_count / sum(as.numeric(oz_eligible == "OZ eligible")),
+              pop_count = sum(as.numeric(oz_eligible_90cl_high == "OZ ineligible") *
+                                    as.numeric(oz_eligible == "OZ eligible") *
+                                    population,
+                                  na.rm = TRUE),
+              pop_share = pop_count / sum(population * as.numeric(oz_eligible == "OZ eligible"), na.rm = TRUE)) %>%
+    mutate(statistic = "Eligible Tracts Ineligible with High 90% CI") %>%
+    relocate(statistic)
+)
+
+write.csv(mfi_moe_sum_tables,
+          file = file.path(path_output, "Tract MFI MOE Summary Table.csv"),
+          row.names = FALSE)
 
 # add in shape information
-tracts = tracts(cb = TRUE, year = 2020)
+tracts = tracts(cb = TRUE, year = 2024)
 
 ozs_sf = tracts %>%
-  left_join(ct_tract_xwalk, by = c("GEOID" = "tract_fips_2020")) %>%
-  mutate(GEOID = ifelse(!is.na(tract_fips_2022), tract_fips_2022, GEOID)) %>% select(-tract_fips_2022) %>%
   left_join(eligible_ozs, by = c("GEOID" = "GEOID_tract"))
-
 
 # fix the dataset format changed by Jason
 ozs_sf_wrangled = ozs_sf %>%
   mutate(mfi = case_when(
     mfi == 0 ~ "not available",
     is.na(mfi) ~ "not available",
-    mfi !=0 ~ paste0("$", round(mfi,0)),
+    mfi != 0 ~ paste0("$", round(mfi, 0)),
     TRUE ~ NA
   ),
   mfi_ratio = case_when(
     mfi_ratio == 0 ~ "not available",
     is.na(mfi_ratio) ~ "not available",
-    mfi_ratio !=0 ~ as.character(round(100*mfi_ratio,2)),
+    mfi_ratio !=0 ~ as.character(round(mfi_ratio, 2)),
     TRUE ~ NA
   ),
   poverty_rte = case_when(
     is.na(poverty_rte) ~ "not available",
-    !is.na(poverty_rte) ~ paste0(round(poverty_rte*100,2), "%")
+    !is.na(poverty_rte) ~ paste0(round(poverty_rte*100, 2), "%")
   ),
   unempl_rte = case_when(
     is.na(unempl_rte) ~ "not available",
-    !is.na(unempl_rte) ~ paste0(round(unempl_rte*100,2), "%")
+    !is.na(unempl_rte) ~ paste0(round(unempl_rte*100, 2), "%")
   ),
   msa = ifelse(is.na(msa), "not in an MSA", msa),
   population = case_when(
     population == 0 ~ "not available",
     is.na(population) ~ "not available",
     population != 0 ~ paste0(round(population, 0))
-  )
-  ) %>% select(STATEFP, COUNTYFP, TRACTCE, AFFGEOID, GEOID,
-    NAME, NAMELSAD, STUSPS, NAMELSADCO, STATE_NAME, LSAD,
-    ALAND, AWATER, tract, GEOID_msa, msa, GEOID_st, state,
-    population, mfi, poverty_rte, mfi_ratio, oz_eligible,
-    unempl_rte, r_stat, r_stat_simp, geometry)
-
+  )) %>%
+  select(STATEFP, COUNTYFP, TRACTCE, GEOID,
+         NAME, NAMELSAD, STUSPS, NAMELSADCO, STATE_NAME, LSAD,
+         ALAND, AWATER, tract, GEOID_msa, msa, GEOID_st, state,
+         population, mfi, poverty_rte, mfi_ratio, oz_eligible,
+         unempl_rte, r_stat, r_stat_simp, geometry)
 
 ozs_sf_write <- st_make_valid(ozs_sf_wrangled)  # ensure validity
 ozs_sf_write <- st_transform(ozs_sf_write, 4326)
 
 setwd(path_output)
-dir.create("ozs_shape")
-setwd(file.path(path_output, "ozs_shape"))
-st_write(ozs_sf_write, "ozs_shape.shp")
+dir.create("ozs_shape_24")
+setwd(file.path(path_output, "ozs_shape_24"))
+st_write(ozs_sf_write, "ozs_shape_24.shp")
 
-# important factors to list -- that secetarty must report
+# important factors to list -- that Treasury must report
 # page 417 - 418
 # unemployment rate
 # persons working in the population census tract

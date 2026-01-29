@@ -1,12 +1,10 @@
-
-
 ################################################################################
 # Description: Eligible OZs, as in the 2025 Big Beautiful Bill
 # Bill text can be found here: https://www.congress.gov/bill/119th-congress/house-bill/1/text
 # OZ bill text are on pages 390 - 420
 # Rural definitions are on page 398
 # Author: Sarah Eckhardt (sarah@eig.org)
-# Last updated: July 2nd, 2025
+# Last updated: Jan 29th, 2026
 ################################################################################
 
 # Rural:
@@ -14,7 +12,6 @@
 # city or town that has a population of >50,000
 # AND
 # any urbanized area contiguous and adjacent to a city or town (population > 50,000)
-
 
 # remove dependencies
 rm(list = ls())
@@ -44,7 +41,6 @@ path_project <- project_directories[[current_user]]
 path_output <- file.path(path_project, "output")
 path_data <- file.path(path_project, "data")
 
-
 ##############################
 # 1. census tracts file
 
@@ -53,42 +49,35 @@ state_fips <- unique(fips_codes$state)[1:51]
 state_fips <- c(state_fips, "PR")
 
 # Download and bind all tracts for each state
-tracts_all <- map_dfr(state_fips, ~ tracts(state = .x, year = 2020))
+tracts_all <- map_dfr(state_fips, ~ tracts(state = .x, year = 2024))
 
 # filter out water tracts
-tracts_all = tracts_all %>%
-  filter(ALAND > 0)
-
+tracts_all <- tracts_all %>% filter(ALAND > 0)
 
 ########################  
 # 2. census places 
 
 # Download place data for all states and combine
-places_all <- map_dfr(state_fips, ~ places(state = .x, year = 2020, class = "sf"))
+places_all <- map_dfr(state_fips, ~ places(state = .x, year = 2024, class = "sf"))
 
 # pull in place population
 census_api_key("0e4f06202282214292b5b134dce5ec1da9d6fa77", install = TRUE, overwrite=TRUE)
 readRenviron("~/.Renviron")
 
-places_pop <- get_decennial(geography = "place", 
-                            variables = "P1_001N", 
-                            year = 2020, 
-                            output = "wide") %>%
-  rename(POPULATION = P1_001N) %>%
+places_pop <- get_acs(geography = "place",
+                      variables = "B01003_001",
+                      year = 2024,
+                      survey = "acs5") %>%
+  rename(POPULATION = estimate) %>%
   select(GEOID, POPULATION)
 
-places_all <- places_all %>%
-  left_join(places_pop, by = "GEOID")
+places_all <- places_all %>% left_join(places_pop, by = "GEOID")
 
 # identify places with a population of < 50,000
 urban_threshold <- 50000
-
-places_above_50k <- places_all %>%
-  filter(POPULATION > urban_threshold)
+places_above_50k <- places_all %>% filter(POPULATION > urban_threshold)
 
 rm(places_all, places_pop)
-
-
 
 ########################## 
 # 3. grab urbanized areas
@@ -111,14 +100,13 @@ st_crs(urban_areas) == st_crs(places_above_50k)
 # find UAs that intersect cities >50k
 # ""**T***T**"": restricts geometries to have overlapping interiors (true area intersection)
 # excludes tracts that only share a border
-
-uas_near_cities <- st_filter(urban_areas, places_above_50k,
+uas_near_cities <- st_filter(urban_areas,
+                             places_above_50k,
                              .predicate = st_intersects)
 
 ###################################################################################
 # 5. identify which tracts have any intersection with urban areas, and tracts that
 # have no intersection with urban areas
-
 
 # (A) Identify fully rural tracts
 
@@ -130,13 +118,11 @@ uas_near_cities <- st_filter(urban_areas, places_above_50k,
     tracts_non_uas <- tracts_all %>%
       filter(lengths(st_intersects(., uas_near_cities)) == 0)
   
-  
     tracts_rural <- inner_join(
       tracts_non_cities,
       st_drop_geometry(tracts_non_uas),
       by = names(tracts_non_cities)[1:length(names(tracts_non_cities))-1]
     )
-
 
 # (B) Identify fully urban tracts        
 
@@ -151,7 +137,6 @@ uas_near_cities <- st_filter(urban_areas, places_above_50k,
     tracts_urban <- dplyr::bind_rows(tracts_in_cities, tracts_in_uas) %>%
       dplyr::distinct(GEOID, .keep_all = TRUE)
 
-
     # check that these are non-intersecting sets
     nrow(error <- inner_join(
       tracts_rural,
@@ -160,18 +145,15 @@ uas_near_cities <- st_filter(urban_areas, places_above_50k,
     ))
 
 # (C) The remainder are semi-rural
-
 tracts_neither <- tracts_all %>%
   anti_join(st_drop_geometry(tracts_rural), by = names(tracts_non_cities)[1:length(names(tracts_non_cities))-1]) %>%
   anti_join(st_drop_geometry(tracts_urban), by = names(tracts_non_cities)[1:length(names(tracts_non_cities))-1])
-
 
     # check that this classification completely covers all tracts
     nrow(tracts_neither) + nrow(tracts_urban) + nrow(tracts_rural) == nrow(tracts_all)
     nrow(tracts_neither) 
     nrow(tracts_urban) 
     nrow(tracts_rural)
-
 
 # (D) add identifiers    
     
@@ -196,13 +178,11 @@ tracts_catagorized <- tracts_catagorized %>% relocate(geometry, .after = last_co
 tracts_catagorized <- st_make_valid(tracts_catagorized)  # ensure validity
 tracts_catagorized <- st_cast(tracts_catagorized, "MULTIPOLYGON", warn = FALSE)  # enforce uniform type
 
-
 # combine and save tracts
 setwd(path_output)
 dir.create("tracts_rural_cssification")
 setwd(file.path(path_output, "tracts_rural_cssification"))
-st_write(tracts_catagorized, "tracts_rural_classif.shp")
-
+st_write(tracts_catagorized, "tracts_rural_classif_24.shp")
 
 # save df version
 tracts_catagorized_df = tracts_catagorized %>%
@@ -210,5 +190,4 @@ tracts_catagorized_df = tracts_catagorized %>%
   select(GEOID, r_stat)
 
 setwd(path_output)
-write.csv(tracts_catagorized_df, "tracts_rural_classification.csv")
-
+write.csv(tracts_catagorized_df, "tracts_rural_classification_24.csv")

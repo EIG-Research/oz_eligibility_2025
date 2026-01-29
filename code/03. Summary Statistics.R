@@ -1,6 +1,7 @@
 # Project: Mapping new opportunity zones in the 2025 House Reconciliation Bill
 # File Description: Summary statistics and comparison with OZ 1.0
-# last update: 6/16/2025 by Jiaxin He
+# Author: Jason He (jiaxin@eig.org)
+# Last updated: Jan 29th, 2026
 
 # remove dependencies
 rm(list = ls())
@@ -34,7 +35,7 @@ path_data <- file.path(path_project, "data")
 path_output <- file.path(path_project, "output")
 
 ### Load master file and old OZ data ###
-acs_combined_oz <- read_xlsx(file.path(path_output, "tracts_by_OZ_eligibility.xlsx"))
+acs_combined_oz <- read.xlsx(file.path(path_output, "tracts_by_OZ_eligibility_24_master.xlsx"))
 oz_old_summary <- read.xlsx(file.path(path_data, "Master Census Tract File_2012 to 2016.xlsx"), sheet = "Summary")
 oz_old_summary <- oz_old_summary %>% rename(Designation = `X1`) %>%
   filter(Designation %in% c("All Tracts", "LIC Tracts", "OZ Tracts")) %>%
@@ -57,6 +58,9 @@ oz_old_summary <- oz_old_summary %>% rename(Designation = `X1`) %>%
   mutate(Designation = factor(Designation, levels = c("OZ-Eligible Tracts, TCJA (2017)", "OZ Tracts, Currently Designated", "National (2016)"))) %>%
   arrange(Designation)
 
+oz_pr <- acs_combined_oz %>% filter(GEOID_st == "72")
+oz_pr %>% filter(oz_eligible == "OZ eligible") %>% nrow
+
 ### Generate summary statistics ###
 oz_25_summary <- acs_combined_oz %>%
   filter(oz_eligible == "OZ eligible", GEOID_st != "72") %>% # Exclude PR from summaries
@@ -74,7 +78,7 @@ oz_25_summary <- acs_combined_oz %>%
   ) %>% rbind(
     acs_combined_oz %>% filter(GEOID_st != "72") %>%
       summarise(
-        Designation = "National (2023)",
+        Designation = "National (2024)",
         `Number of Tracts` = 84414,
         `Share of US Population` = 1,
         `Poverty Rate` = sum(pop_poverty) / sum(poverty_univ),
@@ -86,8 +90,8 @@ oz_25_summary <- acs_combined_oz %>%
         `Vacancy Rate` = (sum(housing_vacant) - sum(housing_vacant_seasonal)) / sum(housing_total)
       )
   ) %>%
-  mutate(`Data Vintage` = "2019-2023 ACS",
-         `Tract Vintage` = "2020 Decennial") %>%
+  mutate(`Data Vintage` = "2020-2024 ACS",
+         `Tract Vintage` = "2024") %>%
   relocate(Designation, `Data Vintage`, `Tract Vintage`)
 
 oz_proportion_summary <- bind_rows(
@@ -101,4 +105,4 @@ oz_combined_summary <- bind_rows(oz_old_summary, oz_25_summary) %>%
   mutate(across(c(5,6,8:12), ~ .x*100)) %>%
   bind_rows(., oz_proportion_summary %>% mutate(across(c(4:12), ~ .x*100)))
 
-write.csv(oz_combined_summary, file = file.path(path_output, "OZ Comparative Summary Table.csv"))
+write.csv(oz_combined_summary, file = file.path(path_output, "OZ Comparative Summary Table 24.csv"))
