@@ -20,7 +20,8 @@ library(tigris) # for tract and msa shapefiles
 
 # set user-specific project paths
 project_directories <- list(
-  "name" = "PATH TO DIRECTORY"
+  "name" = "PATH TO DIRECTORY",
+  "jiaxinhe" = "/Users/jiaxinhe/Documents/projects/oz_eligibility_2025"
 )
 
 current_user <- Sys.info()[["user"]]
@@ -289,12 +290,102 @@ eligible_ozs = eligible_ozs %>%
 
 table(eligible_ozs$oz_eligible)
 
-# add in rural classification
-# ct_tract_xwalk <- read.csv(file.path(path_data, "2022tractcrosswalk.csv")) %>%
-#   select(tract_fips_2020, tract_fips_2022 = Tract_fips_2022) %>%
-#   mutate(tract_fips_2020 = stringr::str_pad(tract_fips_2020, side = "left", pad = "0", width = 11),
-#          tract_fips_2022 = stringr::str_pad(tract_fips_2022, side = "left", pad = "0", width = 11))
+# Generate OZ eligibility for U.S. island territories excl. Puerto Rico
+island_vars <- load_variables(2020, dataset = "dhcvi")
+decennial_islands <- bind_rows(
+  read.csv(file.path(path_data, "island census/DECENNIALDHCAS2020.P1-Data.csv")),
+  read.csv(file.path(path_data, "island census/DECENNIALDHCGU2020.P1-Data.csv")),
+  read.csv(file.path(path_data, "island census/DECENNIALDHCMP2020.P1-Data.csv")),
+  read.csv(file.path(path_data, "island census/DECENNIALDHCVI2020.P1-Data.csv"))
+) %>%
+  filter(substr(GEO_ID, 1, 9) == "1400000US") %>%
+  rename(tract = NAME) %>%
+  mutate(GEOID_tract = substr(GEO_ID, 10, 20),
+         GEOID_st = substr(GEO_ID, 10, 11),
+         population = as.numeric(P1_001N)) %>%
+  mutate_all(~replace(., is.na(.), 0)) %>%
+  left_join(fips_codes %>% distinct(state, state_code),
+            by = join_by("GEOID_st" == "state_code")) %>%
+  select(GEOID_tract, tract, GEOID_st, state, population) %>%
+  distinct()
 
+decennial_islands_mfi <- bind_rows(
+  read.csv(file.path(path_data, "island census/DECENNIALDHCAS2020.PBG63-Data.csv")),
+  read.csv(file.path(path_data, "island census/DECENNIALDHCGU2020.PBG63-Data.csv")),
+  read.csv(file.path(path_data, "island census/DECENNIALDHCMP2020.PBG63-Data.csv")),
+  read.csv(file.path(path_data, "island census/DECENNIALDHCVI2020.PBG63-Data.csv"))
+) %>%
+  filter(substr(GEO_ID, 1, 9) == "1400000US") %>%
+  mutate(GEOID_tract = substr(GEO_ID, 10, 20),
+         mfi = as.numeric(PBG63_001N)) %>%
+  select(GEOID_tract, mfi) %>%
+  distinct()
+
+decennial_islands_mfi_state <- bind_rows(
+  read.csv(file.path(path_data, "island census/DECENNIALDHCAS2020.PBG63-State.csv")),
+  read.csv(file.path(path_data, "island census/DECENNIALDHCGU2020.PBG63-State.csv")),
+  read.csv(file.path(path_data, "island census/DECENNIALDHCMP2020.PBG63-State.csv")),
+  read.csv(file.path(path_data, "island census/DECENNIALDHCVI2020.PBG63-State.csv"))
+) %>%
+  filter(GEO_ID != "Geography") %>%
+  mutate(GEOID_st = substr(GEO_ID, 10, 11),
+         mfi_relate = as.numeric(PBG63_001N)) %>%
+  select(GEOID_st, mfi_relate)
+
+decennial_islands_pov <- bind_rows(
+  read.csv(file.path(path_data, "island census/DECENNIALDHCAS2020.PBG73-Data.csv")),
+  read.csv(file.path(path_data, "island census/DECENNIALDHCGU2020.PBG73-Data.csv")),
+  read.csv(file.path(path_data, "island census/DECENNIALDHCMP2020.PBG73-Data.csv")),
+  read.csv(file.path(path_data, "island census/DECENNIALDHCVI2020.PBG73-Data.csv"))
+) %>%
+  filter(substr(GEO_ID, 1, 9) == "1400000US") %>%
+  rename(poverty_univ = PBG73_001N,
+         pop_poverty = PBG73_002N) %>%
+  mutate(GEOID_tract = substr(GEO_ID, 10, 20),
+         poverty_univ = as.numeric(poverty_univ),
+         pop_poverty = as.numeric(pop_poverty),
+         poverty_rte = pop_poverty/poverty_univ) %>%
+  select(GEOID_tract, poverty_rte, poverty_univ, pop_poverty) %>%
+  distinct()
+
+decennial_islands <- decennial_islands %>%
+  left_join(decennial_islands_mfi, by = "GEOID_tract") %>%
+  left_join(decennial_islands_mfi_state, by = "GEOID_st") %>%
+  left_join(decennial_islands_pov, by = "GEOID_tract")
+
+eligible_oz_islands <- decennial_islands %>%
+  # implement OZ definition
+  mutate(mfi_ratio = mfi/mfi_relate,
+         oz_eligible_mfi = case_when(mfi_ratio <= 0.7 ~ 1,
+                                     mfi_ratio > 0.7 ~ 0,
+                                     TRUE ~ NA),
+         oz_eligible_pov = case_when(
+           poverty_rte < 0.2 ~ 0,
+           poverty_rte >= 0.2 & (is.na(mfi) | is.nan(mfi) | mfi == 0) ~ 1, # if no MFI available, eligible based on poverty alone
+           poverty_rte >= 0.2 & mfi_ratio <= 1.25 ~ 1,
+           poverty_rte >= 0.2 & mfi_ratio > 1.25 ~ 0,
+           TRUE ~ NA),
+         oz_eligible = case_when(
+           oz_eligible_mfi == 1 | oz_eligible_pov == 1 ~ "OZ eligible",
+           oz_eligible_pov == 0 & oz_eligible_mfi == 0 ~ "OZ ineligible",
+           oz_eligible_pov == 0 & is.na(oz_eligible_mfi) ~ "OZ ineligible",
+           is.na(oz_eligible_pov) & oz_eligible_mfi == 0 ~ "OZ ineligible",
+           TRUE ~ "insufficient information" # this includes tracts that have missing poverty or mfi data, or 0 population
+           )) %>%
+  select(GEOID_tract, tract,
+         GEOID_st, state,
+         population,
+         `Median Family Income` = mfi,
+         `Comparable MSA/State MFI` = mfi_relate,
+         `Tract to MSA/State MFI Ratio` = mfi_ratio,
+         `Poverty Rate` = poverty_rte,
+         `OZ Eligbility` = oz_eligible)
+
+writexl::write_xlsx(eligible_oz_islands,
+                    file.path(path_output,
+                              "Tracts by OZ eligibility for U.S. Territories excl. PR, 2020 Census of Island Areas.xlsx"))
+
+# Add rural classification to OZ eligibility dataset
 rural_classification <- read.csv(file.path(path_output,"tracts_rural_classification_24.csv")) %>% 
   mutate(GEOID_tract = stringr::str_pad(GEOID, side = "left", pad = "0", width = 11)) %>%
   select(-c(X, GEOID))
