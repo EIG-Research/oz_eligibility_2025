@@ -20,8 +20,7 @@ library(tigris) # for tract and msa shapefiles
 
 # set user-specific project paths
 project_directories <- list(
-  "name" = "PATH TO DIRECTORY",
-  "jiaxinhe" = "/Users/jiaxinhe/Documents/projects/oz_eligibility_2025"
+  "name" = "PATH TO DIRECTORY"
 )
 
 current_user <- Sys.info()[["user"]]
@@ -374,10 +373,6 @@ eligible_oz_islands <- decennial_islands %>%
            )) %>%
   select(GEOID_tract, tract, GEOID_st, state, population,
          mfi, mfi_relate, mfi_ratio, poverty_rte, oz_eligible)
-
-writexl::write_xlsx(eligible_oz_islands,
-                    file.path(path_output,
-                              "Tracts by OZ eligibility for U.S. Territories excl. PR, 2020 Census of Island Areas.xlsx"))
 
 # Add rural classification to OZ eligibility dataset
 rural_classification <- read.csv(file.path(path_output,"tracts_rural_classification_24.csv")) %>% 

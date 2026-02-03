@@ -27,8 +27,7 @@ options(tigris_use_cache = TRUE)
 
 # set user-specific project paths
 project_directories <- list(
-  "name" = "PATH TO DIRECTORY",
-  "jiaxinhe" = "/Users/jiaxinhe/Documents/projects/oz_eligibility_2025"
+  "name" = "PATH TO DIRECTORY"
 )
 
 current_user <- Sys.info()[["user"]]
