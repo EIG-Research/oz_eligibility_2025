@@ -372,14 +372,8 @@ eligible_oz_islands <- decennial_islands %>%
            is.na(oz_eligible_pov) & oz_eligible_mfi == 0 ~ "OZ ineligible",
            TRUE ~ "insufficient information" # this includes tracts that have missing poverty or mfi data, or 0 population
            )) %>%
-  select(GEOID_tract, tract,
-         GEOID_st, state,
-         population,
-         `Median Family Income` = mfi,
-         `Comparable MSA/State MFI` = mfi_relate,
-         `Tract to MSA/State MFI Ratio` = mfi_ratio,
-         `Poverty Rate` = poverty_rte,
-         `OZ Eligbility` = oz_eligible)
+  select(GEOID_tract, tract, GEOID_st, state, population,
+         mfi, mfi_relate, mfi_ratio, poverty_rte, oz_eligible)
 
 writexl::write_xlsx(eligible_oz_islands,
                     file.path(path_output,
@@ -389,18 +383,11 @@ writexl::write_xlsx(eligible_oz_islands,
 rural_classification <- read.csv(file.path(path_output,"tracts_rural_classification_24.csv")) %>% 
   mutate(GEOID_tract = stringr::str_pad(GEOID, side = "left", pad = "0", width = 11)) %>%
   select(-c(X, GEOID))
-  # left_join(ct_tract_xwalk, by = c("GEOID_tract" = "tract_fips_2020")) %>%
-  # mutate(GEOID_tract = ifelse(!is.na(tract_fips_2022), tract_fips_2022, GEOID_tract)) %>%
-  # select(-tract_fips_2022)
-  
-eligible_ozs <- eligible_ozs %>%
-  left_join(rural_classification, by = "GEOID_tract") %>%
-  mutate(r_stat = ifelse(is.na(r_stat), "Neither", r_stat)) %>%
-  mutate(r_stat_simp = ifelse(r_stat == "Rural", "Rural", "Non-Rural"))
 
 # save master oz eligibility file
 setwd(path_output)
-oz_24_eligibility_public <- eligible_ozs %>%
+oz_24_eligibility_public <- bind_rows(eligible_ozs,
+                                      eligible_oz_islands) %>%
   mutate(GEOID_msa = ifelse(is.na(GEOID_msa), "not in an MSA", GEOID_msa),
          msa = ifelse(is.na(msa), "not in an MSA", msa),
          population = case_when(population == 0 | is.na(population) ~ "not available",
@@ -416,6 +403,14 @@ oz_24_eligibility_public <- eligible_ozs %>%
                                TRUE ~ NA),
          poverty_rte = case_when(is.na(poverty_rte) ~ "not available",
                                  !is.na(poverty_rte) ~ paste0(round(poverty_rte * 100, 2), "%"))) %>%
+  left_join(rural_classification, by = "GEOID_tract") %>%
+  mutate(r_stat = ifelse(is.na(r_stat), "Neither", r_stat)) %>%
+  mutate(r_stat_simp = ifelse(r_stat == "Rural", "Rural", "Non-Rural")) %>%
+  mutate(state = case_when(state == "AS" ~ "American Samoa",
+                           state == "GU" ~ "Guam",
+                           state == "MP" ~ "Northern Mariana Islands",
+                           state == "VI" ~ "U.S. Virgin Islands",
+                           TRUE ~ state)) %>%
   select(GEOID_tract, tract,
          GEOID_msa, msa,
          GEOID_st, state,
@@ -425,12 +420,30 @@ oz_24_eligibility_public <- eligible_ozs %>%
          `Tract to MSA/State MFI Ratio` = mfi_ratio,
          `Poverty Rate` = poverty_rte,
          `OZ Eligbility` = oz_eligible,
-         `Rural Classification` = r_stat_simp)
+         `Rural Classification` = r_stat_simp) %>%
+  arrange(GEOID_tract)
 
 writexl::write_xlsx(oz_24_eligibility_public,
                     "Tracts by OZ eligibility 2020-24 ACS.xlsx")
 writexl::write_xlsx(eligible_ozs,
                     "tracts_by_OZ_eligibility_24_master.xlsx")
+
+eligible_ozs_by_state <- oz_24_eligibility_public %>%
+  group_by(GEOID_st, state) %>%
+  summarise(total_tracts = n(),
+            num_eligible = sum(as.numeric(`OZ Eligbility` == "OZ eligible"))) %>%
+  ungroup() %>%
+  mutate(num_expected_designated = case_when(
+    ceiling(num_eligible/4) < 25 & num_eligible >= 25 ~ 25,
+    num_eligible < 25 ~ num_eligible,
+    TRUE ~ ceiling(num_eligible/4)
+  ))
+sum(eligible_ozs_by_state$num_expected_designated)
+sum(eligible_ozs_by_state$num_expected_designated[1:51])
+
+write.csv(eligible_ozs_by_state,
+          file.path(path_output, "Number of Eligible and Expected Designated OZs by State.csv"),
+          row.names = FALSE)
 
 # Margin of error summary stats
 mfi_moe_sum_tables <- bind_rows(

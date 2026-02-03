@@ -27,7 +27,8 @@ options(tigris_use_cache = TRUE)
 
 # set user-specific project paths
 project_directories <- list(
-  "name" = "PATH TO DIRECTORY"
+  "name" = "PATH TO DIRECTORY",
+  "jiaxinhe" = "/Users/jiaxinhe/Documents/projects/oz_eligibility_2025"
 )
 
 current_user <- Sys.info()[["user"]]
@@ -42,9 +43,10 @@ path_data <- file.path(path_project, "data")
 ##############################
 # 1. census tracts file
 
-# Get all state FIPS codes (excluding territories)
-state_fips <- unique(fips_codes$state)[1:51]
-state_fips <- c(state_fips, "PR")
+# Get all state FIPS codes, including territories
+state_fips <- fips_codes %>%
+  filter(state != "UM") %>%
+  distinct(state) %>% .$state
 
 # Download and bind all tracts for each state
 tracts_all <- map_dfr(state_fips, ~ tracts(state = .x, year = 2024))
@@ -59,7 +61,6 @@ tracts_all <- tracts_all %>% filter(ALAND > 0)
 places_all <- map_dfr(state_fips, ~ places(state = .x, year = 2024, class = "sf"))
 
 # pull in place population
-
 places_pop <- get_acs(geography = "place",
                       variables = "B01003_001",
                       year = 2024,
@@ -67,9 +68,37 @@ places_pop <- get_acs(geography = "place",
   rename(POPULATION = estimate) %>%
   select(GEOID, POPULATION)
 
-places_all <- places_all %>% left_join(places_pop, by = "GEOID")
+islands_places_pop <- bind_rows(
+  get_decennial(geography = "place",
+                variables = "DP1_0001C",
+                state = "AS",
+                year = 2020,
+                sumfile = "dpas",
+                geometry = FALSE),
+  get_decennial(geography = "place",
+                variables = "DP1_0001C",
+                state = "GU",
+                year = 2020,
+                sumfile = "dpgu",
+                geometry = FALSE),
+  get_decennial(geography = "place",
+                variables = "DP1_0001C",
+                state = "MP",
+                year = 2020,
+                sumfile = "dpmp",
+                geometry = FALSE),
+  get_decennial(geography = "place",
+                variables = "DP1_0001C",
+                state = "VI",
+                year = 2020,
+                sumfile = "dpvi",
+                geometry = FALSE)) %>%
+  rename(POPULATION = value) %>%
+  select(GEOID, POPULATION)
+places_all <- places_all %>%
+  left_join(bind_rows(places_pop, islands_places_pop), by = "GEOID")
 
-# identify places with a population of < 50,000
+# identify places with a population of greater than 50,000
 urban_threshold <- 50000
 places_above_50k <- places_all %>% filter(POPULATION > urban_threshold)
 

@@ -1,0 +1,57 @@
+"GEOID_st","state","total_tracts","num_eligible","num_expected_designated"
+"01","Alabama",1437,563,141
+"02","Alaska",177,32,25
+"04","Arizona",1765,500,125
+"05","Arkansas",823,310,78
+"06","California",9129,2469,618
+"08","Colorado",1447,360,90
+"09","Connecticut",884,243,61
+"10","Delaware",262,61,25
+"11","District of Columbia",206,66,25
+"12","Florida",5160,1360,340
+"13","Georgia",2796,942,236
+"15","Hawaii",461,88,25
+"16","Idaho",456,80,25
+"17","Illinois",3265,950,238
+"18","Indiana",1696,501,126
+"19","Iowa",896,175,44
+"20","Kansas",829,210,53
+"21","Kentucky",1306,545,137
+"22","Louisiana",1388,620,155
+"23","Maine",407,78,25
+"24","Maryland",1475,451,113
+"25","Massachusetts",1620,410,103
+"26","Michigan",3017,856,214
+"27","Minnesota",1505,289,73
+"28","Mississippi",878,404,101
+"29","Missouri",1654,523,131
+"30","Montana",319,58,25
+"31","Nebraska",553,112,28
+"32","Nevada",779,195,49
+"33","New Hampshire",350,53,25
+"34","New Jersey",2181,516,129
+"35","New Mexico",612,257,65
+"36","New York",5397,1702,426
+"37","North Carolina",2672,807,202
+"38","North Dakota",228,37,25
+"39","Ohio",3168,1032,258
+"40","Oklahoma",1205,413,104
+"41","Oregon",1001,229,58
+"42","Pennsylvania",3446,866,217
+"44","Rhode Island",250,55,25
+"45","South Carolina",1323,445,112
+"46","South Dakota",242,52,25
+"47","Tennessee",1701,507,127
+"48","Texas",6896,2420,605
+"49","Utah",716,147,37
+"50","Vermont",193,24,24
+"51","Virginia",2198,607,152
+"53","Washington",1784,394,99
+"54","West Virginia",546,207,52
+"55","Wisconsin",1542,306,77
+"56","Wyoming",160,20,20
+"60","American Samoa",18,16,16
+"66","Guam",57,20,20
+"69","Northern Mariana Islands",26,19,19
+"72","Puerto Rico",981,712,178
+"78","U.S. Virgin Islands",32,18,18
